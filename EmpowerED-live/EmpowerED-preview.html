@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EmpowerED — Resource &amp; Capacity Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --blue:#0F6CBD; --dark:#103F91; --navy:#0B2E6B; --light:#DEEBF7; --bg1:#EEF3FA; --bg2:#F7F9FC;
+    --line:#E6EBF2; --txt:#1E293B; --muted:#64748B;
+    --billable:#0F6CBD; --buffer:#F5A524; --bench:#E5484D; --perm:#0F6CBD; --vendor:#F5A524; --other:#94A3B8;
+    --c1:#0F6CBD; --c2:#22A7A0; --c3:#7C5CBF; --c4:#F5A524; --c5:#E5484D; --c6:#41A5EE;
+    --shadow:0 1px 2px rgba(16,63,145,.04),0 6px 20px rgba(16,63,145,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',Inter,system-ui,sans-serif;color:var(--txt);
+    background:linear-gradient(160deg,var(--bg1),var(--bg2));min-height:100vh}
+  .app{display:flex;min-height:100vh}
+  /* Sidebar */
+  aside{width:224px;flex-shrink:0;color:#fff;background:linear-gradient(180deg,var(--navy),var(--dark));position:sticky;top:0;height:100vh}
+  .brand{padding:22px 22px 18px;border-bottom:1px solid rgba(255,255,255,.10)}
+  .brand b{font-size:25px;font-weight:800;letter-spacing:.3px}
+  .brand div{font-size:11px;color:rgba(255,255,255,.55);margin-top:2px}
+  nav{padding:14px 12px;font-size:13.5px}
+  nav a{display:flex;gap:11px;align-items:center;padding:10px 13px;border-radius:10px;color:rgba(255,255,255,.8);text-decoration:none;margin-bottom:3px;cursor:pointer;transition:.15s}
+  nav a .ic{width:18px;text-align:center;opacity:.9}
+  nav a.active{background:rgba(255,255,255,.16);color:#fff;font-weight:600;box-shadow:inset 3px 0 0 #7FC4FF}
+  nav a:hover{background:rgba(255,255,255,.10)}
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .top{height:58px;background:rgba(255,255,255,.85);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:5}
+  .top .muted{font-size:13px;color:var(--muted)}
+  .badge{background:var(--light);color:var(--dark);border-radius:99px;padding:4px 12px;font-size:12px;font-weight:700}
+  .avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#0F6CBD,#22A7A0);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+  .content{padding:22px 24px 40px}
+  /* Header banner */
+  .hero{background:linear-gradient(120deg,var(--dark),#1E6FC7);border-radius:18px;padding:20px 24px;color:#fff;display:flex;justify-content:space-between;align-items:center;box-shadow:var(--shadow);margin-bottom:20px}
+  .hero h1{font-size:22px;margin:0 0 4px;font-weight:800}
+  .hero p{margin:0;font-size:12.5px;color:rgba(255,255,255,.8)}
+  .btn{background:#fff;color:var(--dark);border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12);transition:.15s}
+  .btn:hover{transform:translateY(-1px)}
+  /* KPIs */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
+  .kpi{position:relative;background:#fff;border-radius:16px;padding:16px 18px 16px 18px;box-shadow:var(--shadow);overflow:hidden;transition:.15s}
+  .kpi:hover{transform:translateY(-2px)}
+  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--accent,#0F6CBD)}
+  .kpi .ic{position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;background:var(--accentbg,#E7F0FB)}
+  .kpi .k{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+  .kpi .v{font-size:28px;font-weight:800;color:var(--dark);margin-top:4px}
+  .kpi .d{font-size:11.5px;color:#16A34A;margin-top:2px;font-weight:600}
+  .kpi .d.mut{color:var(--muted);font-weight:500}
+  /* Section */
+  .section{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:800;color:var(--dark);text-transform:uppercase;letter-spacing:.6px;margin:8px 0 12px}
+  .section::before{content:"";width:16px;height:16px;border-radius:5px;background:linear-gradient(135deg,var(--blue),#22A7A0)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+  .panel{background:#fff;border-radius:16px;padding:16px 18px;box-shadow:var(--shadow)}
+  .panel h3{font-size:13.5px;color:#0F2E5E;margin:0 0 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700}
+  .panel h3 .r{display:flex;align-items:center;gap:8px}
+  .cnt{font-weight:600;color:#94A3B8;font-size:11px}
+  .exp{font-size:11px;color:var(--blue);cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:4px 9px;white-space:nowrap;background:#F8FAFD;transition:.15s;font-weight:600}
+  .exp:hover{background:var(--light);border-color:var(--blue)}
+  .scroll{max-height:360px;overflow-y:auto;padding-right:8px}
+  .scroll::-webkit-scrollbar{width:8px}.scroll::-webkit-scrollbar-thumb{background:#D5DEEA;border-radius:8px}
+  .legend{font-size:12px;line-height:1.8}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:middle}
+  .bar{display:flex;align-items:center;gap:10px;margin:7px 0;font-size:12px}
+  .bar .lbl{width:210px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+  .bar .track{flex:1;background:#EEF2F7;border-radius:99px;display:flex;overflow:hidden;height:16px}
+  .bar .fill{height:16px;transition:width .5s ease}
+  .bar .n{width:46px;text-align:right;font-weight:800;color:#334155}
+  /* Donut */
+  .pie{display:flex;flex-direction:column;align-items:center;gap:14px;padding:8px 0}
+  .donut{position:relative;width:168px;height:168px;border-radius:50%;flex-shrink:0}
+  .donut .hole{position:absolute;inset:34px;background:#fff;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .donut .hole .big{font-size:24px;font-weight:800;color:var(--dark);line-height:1}
+  .donut .hole .cap{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.4px}
+  .legpill{display:flex;flex-direction:column;gap:6px;width:100%}
+  .legpill .lp{display:flex;justify-content:space-between;align-items:center;background:#F8FAFD;border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:12.5px}
+  .legpill .lp b{color:var(--dark)}
+  .note{font-size:11px;color:#94A3B8;margin-top:10px}
+  @media(max-width:860px){.kpis{grid-template-columns:repeat(2,1fr)}.row2{grid-template-columns:1fr}aside{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand"><b>EmpowerED</b><div>Resource Management Portal</div></div>
+    <nav>
+      <a class="active"><span class="ic">▤</span> Dashboard</a>
+      <a><span class="ic">👥</span> Resource Management</a>
+      <a><span class="ic">🧠</span> Skills Registry</a>
+      <a><span class="ic">📁</span> Project Allocation</a>
+      <a><span class="ic">✨</span> AI Assistant</a>
+      <a><span class="ic">📊</span> Reports</a>
+      <a><span class="ic">🛡️</span> Admin</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <div class="top">
+      <div class="muted">Excelsoft Roster 2026 · Corporate Common Resource Bank</div>
+      <div style="display:flex;gap:12px;align-items:center;font-size:12px">
+        <span style="color:#475569">gururaj.k@excelsoftcorp.com</span>
+        <span class="badge">Admin</span>
+        <span class="avatar">GK</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="hero">
+        <div>
+          <h1>Resource &amp; Capacity Dashboard</h1>
+          <p>From “Data for Dashboard.xlsx” · 383 records · 364.75 FTE capacity · updated live on upload</p>
+        </div>
+        <button class="btn" onclick="exportAll()">⬇  Export Dashboard (Excel)</button>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi" style="--accent:#0F6CBD;--accentbg:#E7F0FB"><div class="ic">👥</div><div class="k">Total Employees</div><div class="v">383</div><div class="d mut">head count</div></div>
+        <div class="kpi" style="--accent:#22A7A0;--accentbg:#E3F5F3"><div class="ic">📦</div><div class="k">Total Capacity</div><div class="v">364.75</div><div class="d mut">FTE pool</div></div>
+        <div class="kpi" style="--accent:#0F6CBD;--accentbg:#E7F0FB"><div class="ic">✅</div><div class="k">Billable</div><div class="v">309</div><div class="d">84.7% of capacity</div></div>
+        <div class="kpi" style="--accent:#F5A524;--accentbg:#FEF3DD"><div class="ic">🕒</div><div class="k">Buffer</div><div class="v">47.75</div><div class="d mut">13.1% of capacity</div></div>
+        <div class="kpi" style="--accent:#E5484D;--accentbg:#FCE7E8"><div class="ic">🪑</div><div class="k">Bench Pool</div><div class="v">8</div><div class="d mut">2.2% of capacity</div></div>
+        <div class="kpi" style="--accent:#0F6CBD;--accentbg:#E7F0FB"><div class="ic">🏢</div><div class="k">Permanent</div><div class="v">270</div><div class="d">70.5% of staff</div></div>
+        <div class="kpi" style="--accent:#7C5CBF;--accentbg:#EEE9F8"><div class="ic">📁</div><div class="k">Active Projects</div><div class="v">65</div><div class="d mut">live mappings</div></div>
+        <div class="kpi" style="--accent:#41A5EE;--accentbg:#E7F3FC"><div class="ic">🧩</div><div class="k">Tribes</div><div class="v">28</div><div class="d mut">delivery groups</div></div>
+      </div>
+
+      <div class="section">Capacity Overview</div>
+      <div class="row2">
+        <div class="panel"><h3>Capacity Split <span class="r"><span class="exp" onclick="exp('capSplit')">⬇ Excel</span></span></h3>
+          <div class="pie">
+            <div class="donut" style="background:conic-gradient(var(--billable) 0 84.7%,var(--buffer) 84.7% 96.9%,var(--bench) 96.9% 100%)">
+              <div class="hole"><div class="big">364.75</div><div class="cap">FTE</div></div>
+            </div>
+            <div class="legpill">
+              <div class="lp"><span><span class="sw" style="background:var(--billable)"></span>Billable</span><b>309 · 84.7%</b></div>
+              <div class="lp"><span><span class="sw" style="background:var(--buffer)"></span>Buffer</span><b>47.75 · 13.1%</b></div>
+              <div class="lp"><span><span class="sw" style="background:var(--bench)"></span>Bench</span><b>8 · 2.2%</b></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel"><h3>Capacity by Discipline <span class="r"><span class="exp" onclick="exp('disc')">⬇ Excel</span></span></h3><div id="discBars"></div></div>
+      </div>
+      <div class="row2">
+        <div class="panel"><h3>Buffer % by Discipline <span class="r"><span class="exp" onclick="exp('buf')">⬇ Excel</span></span></h3><div id="bufBars"></div></div>
+        <div class="panel"><h3>Billable vs Buffer by Discipline <span class="r"><span class="exp" onclick="exp('bbDisc')">⬇ Excel</span></span></h3><div id="bbBars"></div>
+          <div class="legend" style="margin-top:8px"><span class="sw" style="background:var(--billable)"></span>Billable&nbsp;&nbsp;<span class="sw" style="background:var(--buffer)"></span>Buffer</div></div>
+      </div>
+
+      <div class="section">Staffing &amp; Projects</div>
+      <div class="row2">
+        <div class="panel"><h3>Permanent vs Vendor Staffing <span class="r"><span class="exp" onclick="exp('permVendor')">⬇ Excel</span></span></h3>
+          <div class="pie">
+            <div class="donut" style="background:conic-gradient(var(--perm) 0 70.5%,var(--vendor) 70.5% 91.9%,var(--other) 91.9% 100%)">
+              <div class="hole"><div class="big">383</div><div class="cap">Staff</div></div>
+            </div>
+            <div class="legpill">
+              <div class="lp"><span><span class="sw" style="background:var(--perm)"></span>Permanent</span><b>270 · 70.5%</b></div>
+              <div class="lp"><span><span class="sw" style="background:var(--vendor)"></span>Vendor / Contractor</span><b>82 · 21.4%</b></div>
+              <div class="lp"><span><span class="sw" style="background:var(--other)"></span>Other / Onsite</span><b>31 · 8.1%</b></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel"><h3><span>Active Projects — Billable / Buffer <span class="cnt" id="projCnt"></span></span> <span class="r"><span class="exp" onclick="exp('projects')">⬇ Excel</span></span></h3>
+          <div class="scroll" id="projBars"></div>
+          <div class="legend" style="margin-top:8px"><span class="sw" style="background:var(--billable)"></span>Billable&nbsp;&nbsp;<span class="sw" style="background:var(--buffer)"></span>Buffer&nbsp;&nbsp;<span style="color:#94A3B8">(illustrative until Billable/Buffer column filled)</span></div>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="panel"><h3>Resources by Tribe <span class="r"><span class="cnt" id="tribeCnt"></span><span class="exp" onclick="exp('tribes')">⬇ Excel</span></span></h3><div class="scroll" id="tribeBars"></div></div>
+        <div class="panel"><h3>Tribe Owners <span class="r"><span class="cnt" id="ownerCnt"></span><span class="exp" onclick="exp('owners')">⬇ Excel</span></span></h3><div class="scroll" id="ownerBars"></div>
+          <div class="note">Illustrative split until the Tribe Owner column is completed.</div></div>
+      </div>
+      <div class="row2">
+        <div class="panel"><h3>VTP / Location Split <span class="r"><span class="exp" onclick="exp('vtp')">⬇ Excel</span></span></h3><div class="scroll" id="vtpBars"></div></div>
+        <div class="panel"><h3>Level-wise Distribution <span class="r"><span class="exp" onclick="exp('level')">⬇ Excel</span></span></h3><div id="levelBars"></div>
+          <div class="note">Illustrative until the Level column is completed.</div></div>
+      </div>
+
+      <div class="section">Skills</div>
+      <div class="row2">
+        <div class="panel"><h3>Skill Set Distribution <span class="r"><span class="exp" onclick="exp('skill')">⬇ Excel</span></span></h3><div id="skillBars"></div>
+          <div class="note">Illustrative until the Skill set column is completed.</div></div>
+        <div class="panel"><h3>Capacity by Discipline (share) <span class="r"><span class="exp" onclick="exp('disc')">⬇ Excel</span></span></h3><div id="discBars2"></div></div>
+      </div>
+
+      <div class="note">Tip: use “Export Dashboard (Excel)” for the full workbook, or the ⬇ Excel link on any chart to export just that chart. All projects and tribes are listed (scroll within each panel).</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var DATA = {
+    capSplit:{title:"Capacity Split", headers:["Status","FTE","%"], rows:[["Billable",309,"84.7%"],["Buffer",47.75,"13.1%"],["Bench",8,"2.2%"]]},
+    permVendor:{title:"Permanent vs Vendor", headers:["Type","Count","%"], rows:[["Permanent",270,"70.5%"],["Vendor / Contractor",82,"21.4%"],["Other / Onsite",31,"8.1%"]]},
+    disc:{title:"Capacity by Discipline", headers:["Discipline","Capacity (FTE)"], rows:[["Dev",203.75],["SQE",112],["DevOps",20],["DB",10],["Dev-Onsite",9],["PMO",5],["Perf Eng",3]]},
+    buf:{title:"Buffer % by Discipline", headers:["Discipline","Buffer %"], rows:[["PMO",40.0],["DevOps",13.75],["Dev",13.37],["DB",12.50],["SQE",11.16],["Perf Eng",0],["Dev-Onsite",0]]},
+    bbDisc:{title:"Billable vs Buffer by Discipline", headers:["Discipline","Billable","Buffer"], rows:[["Dev",170.5,27.25],["SQE",99.5,12.5],["DevOps",17.25,2.75],["DB",7.75,1.25],["Dev-Onsite",9,0],["PMO",3,2],["Perf Eng",3,0]]},
+    tribes:{title:"Resources by Tribe", headers:["Tribe","Headcount"], rows:[["Modern XL",74],["PLT",51],["LMS Socket",44],["Curriculex",30],["Revel",26],["IOI SMS Deleverage",24],["XL Plus",17],["IT Tools-Engineering",16],["Seamless",14],["Access Domain",12],["PLA",10],["IT Tools-Content BAU",9],["PLS Resource Pool",9],["VLAT",8],["MDA",6],["Bronte-SL",5],["ELL",4],["Content Devt-Copilot",4],["Manager",3],["Special Assignment",3],["Longer Leave",3],["PAICE",3],["XL PLus",2],["PMO - Access Domain",1],["Support DashBoard",1],["Windows 11-Copilot",1],["DXP",1],["Storefronts",1]]},
+    owners:{title:"Tribe Owners", headers:["Tribe Owner","Headcount"], rows:[["Madhu Projects",95],["Pradeep Projects",88],["Krishna Projects",80],["Tejaswini Projects",70],["Ranjit Projects",50]]},
+    vtp:{title:"VTP / Location", headers:["VTP / Location","Count"], rows:[["VTP",246],["WFH",67],["Srilanka",18],["Nova",18],["Noida",11],["ALYFAR",9],["Robert Half",5],["Bangalore",4],["HYD",2],["USA",1],["Noida-KDC",1],["HDC",1]]},
+    level:{title:"Level-wise", headers:["Level","Count"], rows:[["Level 1",18],["Level 2",41],["Level 3",96],["Level 4",120],["Level 5",78],["Level 6",30]]},
+    skill:{title:"Skill Set", headers:["Skill","Count"], rows:[["Java",64],["React",52],[".Net",48],["Python",40],["SQE/QA",70],["DevOps",20],["Power BI",15],["DB",14]]}
+  };
+  var projRaw=[["Curriculex 2026-Dev",21],["LMS Socket 2026-Development",14],["Revel 2026-Development",14],["Modern XL 2026-Dev 2",11],["Revel 2026-SQE",9],["Curriculex 2026-SQE",8],["IT Tools Engineering & PTB 2026-Development",8],["Modern XL 2026-SQE 2",8],["LMS Socket 2026-SQE",7],["PLT 2026-SQE",7],["Modern XL 2026-Dev 3",7],["Modern XL 2026-Dev 1",7],["Modern XL 2026-Dev 5",7],["PhysioEX Simulation",7],["PLT 2026-Development 1",6],["SMS 2026-SMS Development",6],["PLA 2026-Dev",6],["IT Tools Content BAU 2026-SQE",5],["LMS Socket 2026-RE",5],["Modern XL 2026-Dev 6",5],["Modern XL 2026-SQE 1",5],["IT Tools Engineering & PTB 2026-SQE",4],["SMS 2026-SMS SQE",4],["Curriculex 2026-RE",3],["IT Tools Content BAU 2026-GradeIT Dev",3],["IT Tools Engineering & PTB 2026-DB",3],["NRPS 2026-Development",3],["Modern XL 2026-SQE 4",3],["Modern XL 2026-SQE 3",3],["PLT 2026-Development 2",3],["IT Tools Content Dev Windows 11-Dev",3],["IT Tools Content BAU 2026-SIM Dev",2],["IT Tools Eng & PTB 2026-Grade IT-Development",2],["Special Assignment 2026-Development",2],["LMS Socket 2026-DBA",2],["SMS 2026-SMS RE",2],["ELL 2026-SQE",2],["Revel 2026-DBA",2],["PLA 2026-SQE",2],["XL Plus 2026",2],["Modern XL 2026-Dev 4",2],["IT Tools Content Dev Copilot-Dev",2],["IT Tools Engineering & PTB 2026-RE",1],["LS Common 2025-26",1],["Special Assignment 2026-SQE",1],["LMS Socket PMO 2026",1],["ELL 2026-Development",1],["Revel 2026-RE",1],["Revel 2026-PE",1],["Curriculex 2026-PMO",1],["PLA 2026-RE",1],["PLA 2026-DB",1],["Modern XL 2026-DBA",1],["Modern XL 2026-RE",1],["Modern XL-PMO 2026",1],["Replacement for Preeti",1],["Services PAL 2026-Development",1],["Services PAL 2026-SQE",1],["PLT 2026-RE",1],["PLT 2026-DBA",1],["IT Tools Content Dev Copilot-SQE",1],["IT Tools Content Dev Windows 11-SQE",1],["TBD",1],["Pearson LS Common Resource Bank FY2024-25",1],["PAICE 2026-SQE",1]];
+  var projRows=projRaw.map(function(p){var b=Math.round(p[1]*0.87);return [p[0],p[1],b,p[1]-b];});
+  DATA.projects={title:"Active Projects", headers:["Project","Headcount","Billable","Buffer"], rows:projRows};
+
+  var GRAD={ blue:'linear-gradient(90deg,#0F6CBD,#41A5EE)', teal:'linear-gradient(90deg,#0E8F88,#22A7A0)',
+             amber:'linear-gradient(90deg,#E8930B,#F5A524)', violet:'linear-gradient(90deg,#6A4BB0,#8C6FD6)',
+             orange:'linear-gradient(90deg,#D9662A,#EA7A3B)' };
+  function simpleBars(id,rows,grad,suf){
+    var max=Math.max.apply(null,rows.map(function(d){return d[1]}))||1;
+    document.getElementById(id).innerHTML=rows.map(function(d){
+      var w=Math.round(d[1]/max*100);
+      return '<div class="bar"><div class="lbl" title="'+d[0]+'">'+d[0]+'</div><div class="track"><div class="fill" style="width:'+w+'%;background:'+grad+';border-radius:99px"></div></div><div class="n">'+d[1]+(suf||'')+'</div></div>';
+    }).join('');
+  }
+  simpleBars('discBars',DATA.disc.rows,GRAD.blue,'');
+  simpleBars('discBars2',DATA.disc.rows,GRAD.blue,'');
+  simpleBars('bufBars',DATA.buf.rows,GRAD.amber,'%');
+  simpleBars('tribeBars',DATA.tribes.rows,GRAD.blue,'');
+  simpleBars('ownerBars',DATA.owners.rows,GRAD.violet,'');
+  simpleBars('vtpBars',DATA.vtp.rows,GRAD.violet,'');
+  simpleBars('levelBars',DATA.level.rows,GRAD.teal,'');
+  simpleBars('skillBars',DATA.skill.rows,GRAD.orange,'');
+  document.getElementById('projCnt').textContent='('+DATA.projects.rows.length+' projects)';
+  document.getElementById('tribeCnt').textContent='('+DATA.tribes.rows.length+' tribes)';
+  document.getElementById('ownerCnt').textContent='('+DATA.owners.rows.length+' owners)';
+
+  (function(){
+    var max=Math.max.apply(null,projRows.map(function(d){return d[1]}))||1;
+    document.getElementById('projBars').innerHTML=projRows.map(function(d){
+      var wb=Math.round(d[2]/max*100), wf=Math.round(d[3]/max*100);
+      return '<div class="bar"><div class="lbl" title="'+d[0]+'">'+d[0]+'</div><div class="track">'
+        +'<div class="fill" style="width:'+wb+'%;background:linear-gradient(90deg,#0F6CBD,#41A5EE)"></div>'
+        +'<div class="fill" style="width:'+wf+'%;background:linear-gradient(90deg,#E8930B,#F5A524)"></div></div>'
+        +'<div class="n">'+d[1]+'</div></div>';
+    }).join('');
+  })();
+  (function(){
+    var rows=DATA.bbDisc.rows, max=Math.max.apply(null,rows.map(function(d){return d[1]+d[2]}));
+    document.getElementById('bbBars').innerHTML=rows.map(function(d){
+      var w1=Math.round(d[1]/max*100), w2=Math.round(d[2]/max*100);
+      return '<div class="bar"><div class="lbl">'+d[0]+'</div><div class="track">'
+        +'<div class="fill" style="width:'+w1+'%;background:linear-gradient(90deg,#0F6CBD,#41A5EE)"></div>'
+        +'<div class="fill" style="width:'+w2+'%;background:linear-gradient(90deg,#E8930B,#F5A524)"></div></div>'
+        +'<div class="n">'+(d[1]+d[2])+'</div></div>';
+    }).join('');
+  })();
+
+  function toCSV(h,r){var e=function(v){v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};return [h.join(',')].concat(r.map(function(x){return x.map(e).join(',')})).join('\n');}
+  function download(n,c,t){var b=new Blob([c],{type:t});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download=n;a.click();URL.revokeObjectURL(u);}
+  function exp(key){var d=DATA[key];if(!d)return;
+    if(window.XLSX){var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([d.headers].concat(d.rows)),key.substring(0,28));XLSX.writeFile(wb,d.title.replace(/[^a-z0-9]+/gi,'_')+'.xlsx');}
+    else download(d.title.replace(/[^a-z0-9]+/gi,'_')+'.csv',toCSV(d.headers,d.rows),'text/csv');}
+  function exportAll(){
+    if(window.XLSX){var wb=XLSX.utils.book_new();Object.keys(DATA).forEach(function(k){var d=DATA[k];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([d.headers].concat(d.rows)),k.substring(0,28));});XLSX.writeFile(wb,'EmpowerED-Dashboard.xlsx');}
+    else{var all=Object.keys(DATA).map(function(k){var d=DATA[k];return d.title+'\n'+toCSV(d.headers,d.rows);}).join('\n\n');download('EmpowerED-Dashboard.csv',all,'text/csv');}
+  }
+</script>
+</body>
+</html>
