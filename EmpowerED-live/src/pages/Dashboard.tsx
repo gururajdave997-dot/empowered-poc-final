@@ -100,9 +100,10 @@ export default function Dashboard() {
     const billable = rows.filter((r) => bb(r).includes("billable")).length;
     const buffer = rows.filter((r) => bb(r).includes("buffer")).length;
     const isBench = (r: Resource) => {
+      const bbv = (r.billableBuffer || "").toLowerCase();
       const p = (r.currentProject || "").toLowerCase();
       const t = (r.department || "").toLowerCase();
-      return p === "bench" || t.includes("resource pool") || t.includes("bench") || (t.includes("pool") && !t.includes("tools"));
+      return bbv.includes("bench") || p === "bench" || t.includes("resource pool");
     };
     const bench = rows.filter(isBench).length;
     const projects = groupCount(rows.filter((r) => (r.currentProject || "").toLowerCase() !== "bench"), (r) => r.currentProject);
