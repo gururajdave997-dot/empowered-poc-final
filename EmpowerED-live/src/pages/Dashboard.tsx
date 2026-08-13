@@ -99,7 +99,12 @@ export default function Dashboard() {
     const bb = (r: Resource) => (r.billableBuffer || "").toLowerCase();
     const billable = rows.filter((r) => bb(r).includes("billable")).length;
     const buffer = rows.filter((r) => bb(r).includes("buffer")).length;
-    const bench = rows.filter((r) => (r.currentProject || "").toLowerCase() === "bench").length;
+    const isBench = (r: Resource) => {
+      const p = (r.currentProject || "").toLowerCase();
+      const t = (r.department || "").toLowerCase();
+      return p === "bench" || t.includes("resource pool") || t.includes("bench") || (t.includes("pool") && !t.includes("tools"));
+    };
+    const bench = rows.filter(isBench).length;
     const projects = groupCount(rows.filter((r) => (r.currentProject || "").toLowerCase() !== "bench"), (r) => r.currentProject);
     const projBB = projects.map(([p]) => {
       const pr = rows.filter((r) => r.currentProject === p);
