@@ -5,33 +5,49 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useResources } from "@/data/dataService";
 import type { Resource } from "@/lib/types";
 
-const buckets: { label: string; test: (r: Resource) => boolean }[] = [
-  { label: "Available Now", test: (r) => r.availabilityStatus === "Available Now" },
-  { label: "Within 15 Days", test: (r) => ["Available Now", "Available in 15 Days"].includes(r.availabilityStatus) },
-  { label: "Within 30 Days", test: (r) => ["Available Now", "Available in 15 Days", "Available in 30 Days"].includes(r.availabilityStatus) },
-  { label: "Within 60 Days", test: (r) => r.availabilityStatus !== "Allocated" && r.availabilityStatus !== "Available in 90 Days" },
-  { label: "Within 90 Days", test: (r) => r.availabilityStatus !== "Allocated" },
-];
+const isBench = (r: Resource) => {
+  const bb = (r.billableBuffer || "").toLowerCase();
+  const p = (r.currentProject || "").toLowerCase();
+  const t = (r.department || "").toLowerCase();
+  return bb.includes("bench") || p === "bench" || t.includes("resource pool");
+};
+const isBuffer = (r: Resource) => (r.billableBuffer || "").toLowerCase().includes("buffer");
+const isAvailNow = (r: Resource) => r.availabilityStatus === "Available Now";
 
 export default function Availability() {
   const rows = useResources();
+
+  const groups = useMemo(() => {
+    const bench = rows.filter(isBench);
+    const buffer = rows.filter(isBuffer);
+    const availNow = rows.filter(isAvailNow);
+    const both = rows.filter((r) => isBench(r) || isBuffer(r));
+    return [
+      { key: "all", label: "Available (Bench + Buffer)", list: both, accent: "#0F6CBD" },
+      { key: "bench", label: "On Bench", list: bench, accent: "#E5484D" },
+      { key: "buffer", label: "On Buffer", list: buffer, accent: "#F5A524" },
+      { key: "now", label: "Available Now", list: availNow, accent: "#22A7A0" },
+    ];
+  }, [rows]);
+
   const [i, setI] = useState(0);
-  const counts = useMemo(() => buckets.map((b) => rows.filter(b.test).length), [rows]);
-  const list = rows.filter(buckets[i].test);
+  const sel = groups[i];
+
   return (
     <div>
-      <PageHeader title="Availability Dashboard" subtitle="Candidate availability from the Time Sheet, bucketed by window." />
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-        {buckets.map((b, idx) => (
-          <Card key={b.label} className={"cursor-pointer hover:shadow-md " + (i === idx ? "ring-2 ring-brand" : "")} onClick={() => setI(idx)}>
+      <PageHeader title="Availability" subtitle="People who are on Bench or Buffer — names and details. Click a card to switch the list." />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        {groups.map((g, idx) => (
+          <Card key={g.key} className={"relative overflow-hidden cursor-pointer hover:shadow-md " + (i === idx ? "ring-2 ring-brand" : "")} onClick={() => setI(idx)}>
+            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 5, background: g.accent }} />
             <CardContent className="pt-4">
-              <div className="text-xs text-slate-500">{b.label}</div>
-              <div className="text-2xl font-bold text-brand-dark">{counts[idx]}</div>
+              <div className="text-xs text-slate-500">{g.label}</div>
+              <div className="text-2xl font-bold text-brand-dark">{g.list.length}</div>
             </CardContent>
           </Card>
         ))}
       </div>
-      <ResourceTable rows={list} caption={"Available — " + buckets[i].label} />
+      <ResourceTable rows={sel.list} caption={sel.label} />
     </div>
   );
 }
