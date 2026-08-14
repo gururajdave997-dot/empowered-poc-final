@@ -45,7 +45,7 @@ export default function Layout() {
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-5">
-          <div className="text-sm text-slate-500">Internal Resource Pool · POC</div>
+          <div className="text-sm text-slate-500 flex items-center gap-2"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>Internal Resource Pool · Live</div>
           <div className="flex items-center gap-3 text-sm">
             <span className="text-slate-600">{user!.email}</span>
             <span className="rounded-full bg-brand-light text-brand-dark px-2 py-0.5 text-xs font-medium">{user!.role}</span>
