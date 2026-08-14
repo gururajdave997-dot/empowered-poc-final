@@ -12,7 +12,6 @@ const isBench = (r: Resource) => {
   return bb.includes("bench") || p === "bench" || t.includes("resource pool");
 };
 const isBuffer = (r: Resource) => (r.billableBuffer || "").toLowerCase().includes("buffer");
-const isAvailNow = (r: Resource) => r.availabilityStatus === "Available Now";
 
 export default function Availability() {
   const rows = useResources();
@@ -20,13 +19,11 @@ export default function Availability() {
   const groups = useMemo(() => {
     const bench = rows.filter(isBench);
     const buffer = rows.filter(isBuffer);
-    const availNow = rows.filter(isAvailNow);
     const both = rows.filter((r) => isBench(r) || isBuffer(r));
     return [
       { key: "all", label: "Available (Bench + Buffer)", list: both, accent: "#0F6CBD" },
       { key: "bench", label: "On Bench", list: bench, accent: "#E5484D" },
       { key: "buffer", label: "On Buffer", list: buffer, accent: "#F5A524" },
-      { key: "now", label: "Available Now", list: availNow, accent: "#22A7A0" },
     ];
   }, [rows]);
 
@@ -36,7 +33,7 @@ export default function Availability() {
   return (
     <div>
       <PageHeader title="Availability" subtitle="People who are on Bench or Buffer — names and details. Click a card to switch the list." />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
         {groups.map((g, idx) => (
           <Card key={g.key} className={"relative overflow-hidden cursor-pointer hover:shadow-md " + (i === idx ? "ring-2 ring-brand" : "")} onClick={() => setI(idx)}>
             <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 5, background: g.accent }} />
