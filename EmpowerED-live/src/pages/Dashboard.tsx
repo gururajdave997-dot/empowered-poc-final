@@ -4,6 +4,7 @@ import PageHeader from "@/components/PageHeader";
 import { useResources, useDataMeta } from "@/data/dataService";
 import type { Resource } from "@/lib/types";
 import { Download } from "lucide-react";
+import CapacityMatrix from "@/components/CapacityMatrix";
 
 type Row = [string, number];
 const COLORS = { billable: "#0F6CBD", buffer: "#F5A524", bench: "#E5484D", perm: "#0F6CBD", vendor: "#F5A524", other: "#94A3B8" };
@@ -116,9 +117,19 @@ export default function Dashboard() {
     const tribes = groupCount(rows, (r) => r.department);
     const owners = groupCount(rows, (r) => r.tribeOwner || "");
     const vtp = groupCount(rows, (r) => r.vtp || "");
+    const dept = (r: Resource) => (r.businessUnit || "").trim();
+    const byDept = groupCount(rows, (r) => dept(r));
+    const statusOf = (r: Resource) => isBench(r) ? "Bench" : bb(r).includes("billable") ? "Billable" : bb(r).includes("buffer") ? "Buffer" : "Other";
+    const deptStatus = byDept.map(([name]) => {
+      const dr = rows.filter((r) => dept(r) === name);
+      return { name, total: dr.length,
+        billable: dr.filter((r) => statusOf(r) === "Billable").length,
+        buffer: dr.filter((r) => statusOf(r) === "Buffer").length,
+        bench: dr.filter((r) => statusOf(r) === "Bench").length };
+    });
     const level = groupCount(rows, (r) => r.level || "");
     const skill = groupCount(rows, (r) => r.primarySkill === "Unspecified" ? "" : r.primarySkill);
-    return { total, permanent, vendor, other, billable, buffer, bench, projects, projBB, tribes, owners, vtp, level, skill };
+    return { total, permanent, vendor, other, billable, buffer, bench, projects, projBB, tribes, owners, vtp, level, skill, byDept, deptStatus };
   }, [rows]);
 
   const exportAll = () => toXLSX([
@@ -129,6 +140,8 @@ export default function Dashboard() {
     { name: "VTP", headers: ["VTP/Location", "Count"], rows: A.vtp },
     { name: "Level", headers: ["Level", "Count"], rows: A.level },
     { name: "Skill", headers: ["Skill", "Count"], rows: A.skill },
+    { name: "By Department", headers: ["Department", "Employees"], rows: A.byDept },
+    { name: "Dept Billable Status", headers: ["Department", "Billable", "Buffer", "Bench", "Total"], rows: A.deptStatus.map((d) => [d.name, d.billable, d.buffer, d.bench, d.total]) },
     { name: "Permanent vs Vendor", headers: ["Type", "Count"], rows: [["Permanent", A.permanent], ["Vendor/Contractor", A.vendor], ["Other", A.other]] },
   ], "EmpowerED-Dashboard.xlsx");
   const expOne = (name: string, headers: string[], data: any[][]) => toXLSX([{ name, headers, rows: data }], name.replace(/[^a-z0-9]+/gi, "_") + ".xlsx");
@@ -150,6 +163,8 @@ export default function Dashboard() {
         <Kpi label="Bench" value={A.bench} accent="#E5484D" />
         <Kpi label="Tribes" value={A.tribes.length} accent="#41A5EE" />
       </div>
+
+      <CapacityMatrix rows={rows} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
         <Panel title="Billable vs Buffer vs Bench" onExport={() => expOne("Capacity Status", ["Status", "Count"], [["Billable", A.billable], ["Buffer", A.buffer], ["Bench", A.bench]])}>
@@ -190,6 +205,36 @@ export default function Dashboard() {
         <Panel title="VTP / Location Split" count={A.vtp.length} onExport={() => expOne("VTP", ["VTP/Location", "Count"], A.vtp)}><Bars data={A.vtp} grad={GRAD.violet} scroll /></Panel>
       </div>
 
+      <div className="text-xs font-bold text-brand-dark uppercase tracking-wide mt-1 mb-2">By Department (Team)</div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+        <Panel title="Employees by Department" count={A.byDept.length} onExport={() => expOne("Employees by Department", ["Department", "Employees"], A.byDept)}>
+          <Bars data={A.byDept} grad={GRAD.teal} scroll />
+        </Panel>
+        <Panel title="Billable Status by Department" onExport={() => expOne("Billable Status by Department", ["Department", "Billable", "Buffer", "Bench", "Total"], A.deptStatus.map((d) => [d.name, d.billable, d.buffer, d.bench, d.total]))}>
+          <div className="max-h-80 overflow-y-auto pr-1">
+            {A.deptStatus.map((d) => {
+              const dmax = Math.max(1, ...A.deptStatus.map((x) => x.total));
+              return (
+                <div key={d.name} className="flex items-center gap-2 my-1.5 text-xs">
+                  <div className="w-44 shrink-0 text-slate-600 truncate" title={d.name}>{d.name}</div>
+                  <div className="flex-1 bg-slate-100 rounded-full h-3.5 overflow-hidden flex">
+                    <div style={{ width: `${d.billable / dmax * 100}%`, background: "#0F6CBD" }} />
+                    <div style={{ width: `${d.buffer / dmax * 100}%`, background: "#F5A524" }} />
+                    <div style={{ width: `${d.bench / dmax * 100}%`, background: "#E5484D" }} />
+                  </div>
+                  <div className="w-10 text-right font-bold text-slate-700">{d.total}</div>
+                </div>
+              );
+            })}
+            {!A.deptStatus.length && <div className="text-xs text-slate-400 py-6 text-center">No data.</div>}
+          </div>
+          <div className="text-[11px] mt-2">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: "#0F6CBD" }} />Billable&nbsp;&nbsp;
+            <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: "#F5A524" }} />Buffer&nbsp;&nbsp;
+            <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: "#E5484D" }} />Bench
+          </div>
+        </Panel>
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
         <Panel title="Level-wise Distribution" onExport={() => expOne("Level", ["Level", "Count"], A.level)}><Bars data={A.level} grad={GRAD.teal} /></Panel>
         <Panel title="Skill Set Distribution" onExport={() => expOne("Skill", ["Skill", "Count"], A.skill)}><Bars data={A.skill} grad={GRAD.orange} /></Panel>
