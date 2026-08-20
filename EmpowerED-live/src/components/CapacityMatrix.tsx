@@ -57,7 +57,25 @@ export default function CapacityMatrix({ rows }: { rows: Resource[] }) {
         }),
       };
     });
-    return { disciplines, summary, pct, tribeRows };
+    // tribe owner x discipline (capacity total, and buffer) + owner-level billable / buffer / bench
+    const owners = Array.from(new Set(rows.map((r) => (r.tribeOwner || "").trim() || "Unassigned")))
+      .map((name) => ({ name, cap: sumCap(rows.filter((r) => ((r.tribeOwner || "").trim() || "Unassigned") === name)) }))
+      .sort((a, b) => b.cap - a.cap);
+    const ownerRows = owners.map((o) => {
+      const or_ = rows.filter((r) => ((r.tribeOwner || "").trim() || "Unassigned") === o.name);
+      return {
+        name: o.name,
+        total: sumCap(or_),
+        billable: sumCap(or_.filter((r) => bb(r).includes("billable"))),
+        buffer: sumCap(or_.filter((r) => bb(r).includes("buffer"))),
+        bench: or_.filter(isBench).length,
+        cells: disciplines.map((d) => {
+          const cell = or_.filter((r) => disc(r) === d);
+          return { cap: sumCap(cell), buffer: sumCap(cell.filter((r) => bb(r).includes("buffer"))) };
+        }),
+      };
+    });
+    return { disciplines, summary, pct, tribeRows, ownerRows };
   }, [rows]);
 
   const exportMatrix = () => {
@@ -74,6 +92,9 @@ export default function CapacityMatrix({ rows }: { rows: Resource[] }) {
     const tHead = ["Tribe", "Total", ...M.disciplines.flatMap((d) => [d, d + "-Buffer"])];
     const tRows = M.tribeRows.map((t) => [t.name, t.total, ...t.cells.flatMap((c) => [c.cap, c.buffer])]);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([tHead, ...tRows]), "Tribe x Discipline");
+    const oHead = ["Tribe Owner", "Total", "Billable", "Buffer", "Buffer %", "Bench", ...M.disciplines.flatMap((d) => [d, d + "-Buffer"])];
+    const oRows = M.ownerRows.map((o) => [o.name, o.total, o.billable, o.buffer, M.pct(o.buffer, o.total), o.bench, ...o.cells.flatMap((c) => [c.cap, c.buffer])]);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([oHead, ...oRows]), "Tribe Owner x Discipline");
     XLSX.writeFile(wb, "Capacity-Matrix.xlsx");
   };
 
@@ -133,6 +154,46 @@ export default function CapacityMatrix({ rows }: { rows: Resource[] }) {
               <tr key={t.name} className={ri % 2 ? "bg-slate-50" : ""}>
                 <td className={tdl}>{t.name}</td><td className={td + " font-bold text-brand-dark"}>{t.total}</td>
                 {t.cells.map((c, i) => (
+                  <Fragment key={i}>
+                    <td className={td}>{c.cap || ""}</td>
+                    <td className={td + " text-amber-600"}>{c.buffer || ""}</td>
+                  </Fragment>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="text-xs font-semibold text-slate-600 mt-5 mb-2">Capacity by Tribe Owner × Discipline (FTE · buffer shown in the –Buf column)</div>
+      <div className="overflow-x-auto max-h-[460px] overflow-y-auto">
+        <table className="text-xs border-collapse">
+          <thead className="sticky top-0">
+            <tr className="bg-brand-dark text-white">
+              <th className={thl}>Tribe Owner</th>
+              <th className={th}>Total</th>
+              <th className={th}>Billable</th>
+              <th className={th + " text-amber-200"}>Buffer</th>
+              <th className={th + " text-amber-200"}>Buffer %</th>
+              <th className={th}>Bench</th>
+              {M.disciplines.map((d) => (
+                <Fragment key={d}>
+                  <th className={th}>{d}</th>
+                  <th className={th + " text-amber-200"}>{d}-Buf</th>
+                </Fragment>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {M.ownerRows.map((o, ri) => (
+              <tr key={o.name} className={ri % 2 ? "bg-slate-50" : ""}>
+                <td className={tdl}>{o.name}</td>
+                <td className={td + " font-bold text-brand-dark"}>{o.total}</td>
+                <td className={td + " font-semibold"}>{o.billable || ""}</td>
+                <td className={td + " text-amber-600 font-semibold"}>{o.buffer || ""}</td>
+                <td className={td + " text-amber-600"}>{M.pct(o.buffer, o.total)}</td>
+                <td className={td}>{o.bench || ""}</td>
+                {o.cells.map((c, i) => (
                   <Fragment key={i}>
                     <td className={td}>{c.cap || ""}</td>
                     <td className={td + " text-amber-600"}>{c.buffer || ""}</td>
