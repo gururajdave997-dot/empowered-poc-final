@@ -127,9 +127,16 @@ export default function Dashboard() {
         buffer: dr.filter((r) => statusOf(r) === "Buffer").length,
         bench: dr.filter((r) => statusOf(r) === "Bench").length };
     });
+    const ownerStatus = owners.map(([name]) => {
+      const or_ = rows.filter((r) => (r.tribeOwner || "").trim() === name);
+      return { name, total: or_.length,
+        billable: or_.filter((r) => statusOf(r) === "Billable").length,
+        buffer: or_.filter((r) => statusOf(r) === "Buffer").length,
+        bench: or_.filter((r) => statusOf(r) === "Bench").length };
+    });
     const level = groupCount(rows, (r) => r.level || "");
     const skill = groupCount(rows, (r) => r.primarySkill === "Unspecified" ? "" : r.primarySkill);
-    return { total, permanent, vendor, other, billable, buffer, bench, projects, projBB, tribes, owners, vtp, level, skill, byDept, deptStatus };
+    return { total, permanent, vendor, other, billable, buffer, bench, projects, projBB, tribes, owners, ownerStatus, vtp, level, skill, byDept, deptStatus };
   }, [rows]);
 
   const exportAll = () => toXLSX([
@@ -137,6 +144,7 @@ export default function Dashboard() {
     { name: "Active Projects", headers: ["Project", "Headcount", "Billable", "Buffer"], rows: A.projBB.map((x) => [x.p, x.total, x.billable, x.buffer]) },
     { name: "By Tribe", headers: ["Tribe", "Headcount"], rows: A.tribes },
     { name: "Tribe Owners", headers: ["Owner", "Headcount"], rows: A.owners },
+    { name: "Owner Billable Status", headers: ["Tribe Owner", "Headcount", "Billable", "Buffer", "Bench", "Buffer %"], rows: A.ownerStatus.map((o) => [o.name, o.total, o.billable, o.buffer, o.bench, o.total ? Math.round(o.buffer / o.total * 1000) / 10 : 0]) },
     { name: "VTP", headers: ["VTP/Location", "Count"], rows: A.vtp },
     { name: "Level", headers: ["Level", "Count"], rows: A.level },
     { name: "Skill", headers: ["Skill", "Count"], rows: A.skill },
@@ -201,7 +209,38 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
-        <Panel title="Tribe Owners" count={A.owners.length} onExport={() => expOne("Tribe Owners", ["Owner", "Headcount"], A.owners)}><Bars data={A.owners} grad={GRAD.violet} scroll /></Panel>
+        <Panel title="Tribe Owners — Billable / Buffer / Bench" count={A.ownerStatus.length} onExport={() => expOne("Tribe Owner Billable Status", ["Tribe Owner", "Headcount", "Billable", "Buffer", "Bench", "Buffer %"], A.ownerStatus.map((o) => [o.name, o.total, o.billable, o.buffer, o.bench, o.total ? Math.round(o.buffer / o.total * 1000) / 10 : 0]))}>
+          <div className="max-h-80 overflow-y-auto pr-1">
+            {A.ownerStatus.map((o) => {
+              const omax = Math.max(1, ...A.ownerStatus.map((x) => x.total));
+              return (
+                <div key={o.name} className="flex items-center gap-2 my-1.5 text-xs">
+                  <div className="w-36 shrink-0 text-slate-600 truncate" title={o.name}>{o.name}</div>
+                  <div className="flex-1 bg-slate-100 rounded-full h-3.5 overflow-hidden flex" title={`Billable ${o.billable} · Buffer ${o.buffer} · Bench ${o.bench}`}>
+                    <div style={{ width: `${o.billable / omax * 100}%`, background: COLORS.billable }} />
+                    <div style={{ width: `${o.buffer / omax * 100}%`, background: COLORS.buffer }} />
+                    <div style={{ width: `${o.bench / omax * 100}%`, background: COLORS.bench }} />
+                  </div>
+                  <div className="w-28 shrink-0 text-right font-bold tabular-nums">
+                    <span style={{ color: COLORS.billable }}>{o.billable}</span>
+                    <span className="text-slate-300 mx-1">/</span>
+                    <span style={{ color: COLORS.buffer }}>{o.buffer}</span>
+                    <span className="text-slate-300 mx-1">/</span>
+                    <span style={{ color: COLORS.bench }}>{o.bench}</span>
+                  </div>
+                  <div className="w-8 shrink-0 text-right font-bold text-slate-700">{o.total}</div>
+                </div>
+              );
+            })}
+            {!A.ownerStatus.length && <div className="text-xs text-slate-400 py-6 text-center">No Tribe Owner data — upload the monthly Excel with the Tribe Owner column filled.</div>}
+          </div>
+          <div className="text-[11px] mt-2">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: COLORS.billable }} />Billable&nbsp;&nbsp;
+            <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: COLORS.buffer }} />Buffer&nbsp;&nbsp;
+            <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: COLORS.bench }} />Bench
+            <span className="text-slate-400 ml-2">(counts shown as Billable / Buffer / Bench · last column = headcount)</span>
+          </div>
+        </Panel>
         <Panel title="VTP / Location Split" count={A.vtp.length} onExport={() => expOne("VTP", ["VTP/Location", "Count"], A.vtp)}><Bars data={A.vtp} grad={GRAD.violet} scroll /></Panel>
       </div>
 
