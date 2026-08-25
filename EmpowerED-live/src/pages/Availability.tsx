@@ -9,7 +9,7 @@ import { isBench, isBuffer, isAvailable, isPartTime, totalFreeFte, dedupeByPerso
 export default function Availability() {
   const rows = useResources();
 
-  const { groups, records } = useMemo(() => {
+  const groups = useMemo(() => {
     // One line per person — the feed has one row per allocation, so without
     // this a person with two allocations is listed twice.
     const both = dedupeByPerson(rows.filter(isAvailable));
@@ -19,24 +19,23 @@ export default function Availability() {
     // never an addition. Stating it on the card stops it reading as 11 + 61.
     const benchInPool = both.filter(isBench).length;
 
-    return {
-      records: rows.filter(isAvailable).length,
-      groups: [
-        { key: "all", label: "Available (Bench + Buffer)", list: both, accent: "#0F6CBD",
-          note: `${benchInPool} of these are on bench` },
-        { key: "bench", label: "On Bench", list: bench, accent: "#E5484D",
-          note: "included in Available" },
-        { key: "buffer", label: "On Buffer", list: buffer, accent: "#F5A524",
-          note: "included in Available" },
-      ],
-    };
+    // count = allocation RECORDS, so the cards tie back to the Dashboard.
+    // list  = unique people, so no name appears twice in the table.
+    return [
+      { key: "all", label: "Available (Bench + Buffer)", list: both, accent: "#0F6CBD",
+        count: rows.filter(isAvailable).length, note: `${benchInPool} of these are on bench` },
+      { key: "bench", label: "On Bench", list: bench, accent: "#E5484D",
+        count: rows.filter(isBench).length, note: "included in Available" },
+      { key: "buffer", label: "On Buffer", list: buffer, accent: "#F5A524",
+        count: rows.filter(isBuffer).length, note: "included in Available" },
+    ];
   }, [rows]);
 
   const [i, setI] = useState(0);
   const sel = groups[i];
   const fte = totalFreeFte(sel.list);
   const partTimers = sel.list.filter(isPartTime).length;
-  const merged = i === 0 ? records - sel.list.length : 0;
+  const merged = sel.count - sel.list.length;
 
   return (
     <div>
@@ -55,7 +54,7 @@ export default function Availability() {
             <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 5, background: g.accent }} />
             <CardContent className="pt-4">
               <div className="text-xs text-slate-500">{g.label}</div>
-              <div className="text-2xl font-bold text-brand-dark">{g.list.length}</div>
+              <div className="text-2xl font-bold text-brand-dark">{g.count}</div>
               <div className="text-[11px] text-slate-400">{g.note}</div>
             </CardContent>
           </Card>
@@ -70,12 +69,12 @@ export default function Availability() {
         )}
         {merged > 0 && (
           <span className="text-slate-400">
-            {" "}· {records} allocation records merged into {sel.list.length} people
+            {" "}· {sel.count} records → {sel.list.length} people ({merged} duplicate{merged > 1 ? "s" : ""} merged)
           </span>
         )}
       </div>
 
-      <ResourceTable rows={sel.list} caption={sel.label} />
+      <ResourceTable rows={sel.list} caption={sel.label} statusMode="capacity" />
     </div>
   );
 }
