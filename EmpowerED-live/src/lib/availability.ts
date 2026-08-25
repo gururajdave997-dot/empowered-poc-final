@@ -1,22 +1,28 @@
 // EmpowerED-live/src/lib/availability.ts
 //
-// Single source of truth for "how allocated / how available is this person".
-// Both the Availability page and ResourceTable must use these helpers, so the
-// cards, the Alloc % column and the Dashboard can never disagree again.
+// Display helpers for capacity / allocation / availability.
+//
+// DEFINITIONS ARE TAKEN FROM THE DASHBOARD, which is the page the business
+// trusts. Do not "improve" them here without changing the Dashboard too:
+//
+//   Billable (324) + Buffer (61) = every record (385)
+//   Bench (11) is a SUBSET of Buffer, not a third group.
+//   Buffer FTE (55.25) = sum of the `capacity` field over buffer records.
+//
+// So Bench and Buffer deliberately OVERLAP. The Availability cards must read
+// as "61 available, of which 11 are on bench" — never as 11 + 61 = 72.
 
 import type { Resource } from "@/lib/types";
 
+const said = (v?: string) => (v || "").toLowerCase();
+
 /**
- * Normalised allocation, always as a percentage 0..100+.
+ * Allocation as a percentage 0..100.
  *
- * WHY THIS EXISTS: types.ts declares `allocationPct` as "0..100", but the
- * Time Sheet feed supplies FTE fractions (0.5 = half allocated). Rendering
- * that raw gives "0.5%", which rounds to 0% — the reported bug.
- *
- * ASSUMPTION: any value <= 1 is an FTE fraction, not a percentage. A literal
- * 1% allocation is not a real state in this system, whereas 1.0 FTE (fully
- * allocated) is the commonest one. If the feed is ever fixed to emit true
- * percentages, delete the `raw <= 1` branch.
+ * types.ts declares allocationPct as "0..100" but the Time Sheet feed sends
+ * FTE fractions (0.5 = half allocated). Rendering that raw gave "0.5%", which
+ * rounded to 0% — the original bug. Anything <= 1 is treated as FTE; a literal
+ * 1% allocation is not a real state, whereas 1.0 FTE is the commonest one.
  */
 export function allocPct(r: Resource): number {
   const raw = Number(r.allocationPct);
@@ -24,63 +30,39 @@ export function allocPct(r: Resource): number {
   return raw <= 1 ? raw * 100 : raw;
 }
 
-/** Person's total capacity as a percentage. Defaults to 100% when not set. */
-export function capacityPct(r: Resource): number {
+/** Capacity in FTE. 1.0 when the field is absent. */
+export function capacityFte(r: Resource): number {
   const cap = Number(r.capacity);
-  if (!Number.isFinite(cap) || cap <= 0) return 100;
-  return cap <= 1 ? cap * 100 : cap;
+  if (!Number.isFinite(cap) || cap <= 0) return 1;
+  return cap > 1.5 ? cap / 100 : cap; // tolerate a feed that sends 50 for 0.5
 }
 
-/** Unused capacity as a percentage 0..100. This is what "available" means. */
-export function freePct(r: Resource): number {
-  return Math.max(0, Math.min(100, capacityPct(r) - allocPct(r)));
-}
+export const capacityPct = (r: Resource) => capacityFte(r) * 100;
 
-/** Display string for the Alloc % column. */
-export function allocLabel(r: Resource): string {
-  return `${Math.round(allocPct(r))}%`;
-}
+/** Unused capacity as a percentage of this person's own capacity. */
+export const freePct = (r: Resource) =>
+  Math.max(0, Math.min(100, capacityPct(r) - allocPct(r)));
 
-/** Display string for a free-capacity column. */
-export function freeLabel(r: Resource): string {
-  return `${Math.round(freePct(r))}%`;
-}
+export const freeFte = (r: Resource) => (capacityPct(r) - allocPct(r)) / 100;
 
-export type Bucket = "bench" | "buffer" | "partial" | "allocated";
+export const allocLabel = (r: Resource) => `${Math.round(allocPct(r))}%`;
+export const freeLabel = (r: Resource) => `${Math.round(freePct(r))}%`;
+/** "1.0" / "0.5" — the half-timers that were previously invisible. */
+export const capacityLabel = (r: Resource) => capacityFte(r).toFixed(1);
+export const isPartTime = (r: Resource) => capacityFte(r) < 1;
 
-const said = (v?: string) => (v || "").toLowerCase();
+// --- Pool membership: same tests the Dashboard uses. Bench ⊂ Buffer. -------
 
-/**
- * Mutually exclusive buckets, evaluated in priority order. Because a person
- * lands in exactly one, the counts add up — the old isBench/isBuffer pair both
- * returned true for the same person (Buffer label + "Resource Pool" dept),
- * which is why "Bench + Buffer" showed the same number as "Buffer" alone.
- */
-export function bucketOf(r: Resource): Bucket {
-  const alloc = allocPct(r);
+export const isBench = (r: Resource) =>
+  said(r.billableBuffer).includes("bench") ||
+  said(r.currentProject) === "bench" ||
+  said(r.department).includes("resource pool");
 
-  // 1. Nothing allocated at all.
-  if (alloc <= 0) {
-    // Buffer label wins over plain bench so the two lists stay meaningful.
-    return said(r.billableBuffer).includes("buffer") ? "buffer" : "bench";
-  }
+export const isBuffer = (r: Resource) => said(r.billableBuffer).includes("buffer");
 
-  // 2. Explicitly flagged as Buffer capacity, even though partly allocated.
-  if (said(r.billableBuffer).includes("buffer")) return "buffer";
+/** Everyone in the available pool — bench and buffer, de-duplicated. */
+export const isAvailable = (r: Resource) => isBench(r) || isBuffer(r);
 
-  // 3. Allocated, but with real capacity left (the 0.5 FTE case).
-  if (freePct(r) > 0) return "partial";
-
-  // 4. Fully committed.
-  return "allocated";
-}
-
-/** Anyone with capacity to give. */
-export function isAvailable(r: Resource): boolean {
-  return bucketOf(r) !== "allocated";
-}
-
-/** Sum of free capacity across a list, expressed in FTE. */
-export function totalFreeFte(rows: Resource[]): number {
-  return rows.reduce((sum, r) => sum + freePct(r) / 100, 0);
-}
+/** Spare capacity of a list, in FTE. Matches the Dashboard's Buffer FTE. */
+export const totalFreeFte = (rows: Resource[]) =>
+  rows.reduce((s, r) => s + Math.max(0, capacityFte(r)), 0);
