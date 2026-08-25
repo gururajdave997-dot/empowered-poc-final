@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { downloadCSV } from "@/lib/utils";
 import { allocStatus, ALLOC } from "@/lib/alloc";
-import { allocPct, allocLabel, freePct, freeLabel } from "@/lib/availability";
+import { allocPct, allocLabel, freePct, freeLabel, capacityFte, capacityLabel, isPartTime, poolStatus, poolTone } from "@/lib/availability";
 import type { Resource } from "@/lib/types";
 import { Download } from "lucide-react";
 
@@ -21,7 +21,15 @@ function allocTone(pct: number): "green" | "amber" | "red" {
   return s === ALLOC.UNALLOCATED ? "green" : s === ALLOC.PARTIAL ? "amber" : "red";
 }
 
-export default function ResourceTable({ rows, caption, onClear }: { rows: Resource[]; caption?: string; onClear?: () => void }) {
+export default function ResourceTable({
+  rows,
+  caption,
+  onClear,
+  // "row"      → status from this row's own allocationPct (Resource Management)
+  // "capacity" → status from free capacity, so a 0.5-FTE record with nothing
+  //              booked on it still reads "Partially Allocated" (Availability)
+  statusMode = "row",
+}: { rows: Resource[]; caption?: string; onClear?: () => void; statusMode?: "row" | "capacity" }) {
   const [q, setQ] = useState("");
   const filtered = rows.filter((r) =>
     !q || [r.name, r.employeeCode, r.businessUnit, r.department, r.primarySkill, r.secondarySkill]
@@ -33,9 +41,11 @@ export default function ResourceTable({ rows, caption, onClear }: { rows: Resour
     PrimarySkill: r.primarySkill, SecondarySkill: r.secondarySkill, Experience: r.experience,
     CurrentProject: r.currentProject,
     // Normalised, so the CSV matches what the screen shows.
+    CapacityFte: capacityFte(r),
     AllocationPct: Math.round(allocPct(r)),
     FreePct: Math.round(freePct(r)),
-    AllocationStatus: allocStatus(allocPct(r)),
+    FreeFte: Number((freePct(r) / 100).toFixed(2)),
+    AllocationStatus: statusMode === "capacity" ? poolStatus(r) : allocStatus(allocPct(r)),
     Availability: r.availabilityStatus,
   }));
 
@@ -54,7 +64,7 @@ export default function ResourceTable({ rows, caption, onClear }: { rows: Resour
           <THead><TR>
             <TH>Name</TH><TH>Business Unit</TH><TH>Dept</TH>
             <TH>Primary Skill</TH><TH>Secondary</TH><TH>Exp</TH><TH>Project</TH>
-            <TH>Alloc %</TH><TH>Free %</TH><TH>Allocation Status</TH><TH>Availability</TH>
+            <TH>Capacity (FTE)</TH><TH>Alloc %</TH><TH>Free %</TH><TH>Allocation Status</TH><TH>Availability</TH>
           </TR></THead>
           <tbody>
             {filtered.map((r) => (
@@ -63,14 +73,21 @@ export default function ResourceTable({ rows, caption, onClear }: { rows: Resour
                 <TD>{r.businessUnit}</TD><TD>{r.department}</TD>
                 <TD>{r.primarySkill}</TD><TD className="text-slate-500">{r.secondarySkill}</TD>
                 <TD>{r.experience}y</TD><TD>{r.currentProject}</TD>
+                {/* Capacity was never displayed — that is why 0.5 FTE people
+                    looked identical to full-time people. */}
+                <TD className={isPartTime(r) ? "font-semibold text-violet-700" : "text-slate-500"}>{capacityLabel(r)}</TD>
                 {/* was {r.allocationPct}% — an FTE of 0.5 rendered as "0.5%" */}
                 <TD>{allocLabel(r)}</TD>
                 <TD className={freePct(r) > 0 ? "font-medium text-emerald-700" : "text-slate-400"}>{freeLabel(r)}</TD>
-                <TD><Badge tone={allocTone(allocPct(r))}>{allocStatus(allocPct(r))}</Badge></TD>
+                <TD>
+                  {statusMode === "capacity"
+                    ? <Badge tone={poolTone(r)}>{poolStatus(r)}</Badge>
+                    : <Badge tone={allocTone(allocPct(r))}>{allocStatus(allocPct(r))}</Badge>}
+                </TD>
                 <TD><Badge tone={statusTone(r.availabilityStatus)}>{r.availabilityStatus}</Badge></TD>
               </TR>
             ))}
-            {!filtered.length && <TR><TD colSpan={11} className="text-center text-slate-400 py-6">No matching resources.</TD></TR>}
+            {!filtered.length && <TR><TD colSpan={12} className="text-center text-slate-400 py-6">No matching resources.</TD></TR>}
           </tbody>
         </Table>
       </div>
