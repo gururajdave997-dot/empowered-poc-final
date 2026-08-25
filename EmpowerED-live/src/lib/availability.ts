@@ -77,6 +77,29 @@ export const totalFreeFte = (rows: Resource[]) =>
 // reconciles with the Dashboard. The HEADCOUNT legitimately drops, because it
 // was previously counting records rather than people.
 
+// --- Status derived from capacity, not from the row's own alloc field ------
+//
+// A buffer record with capacity 0.5 and allocationPct 0 means HALF of this
+// person is already committed elsewhere. Reading only allocationPct made the
+// badge say "Unallocated" when the person is really half booked.
+
+/** How much of a FULL FTE is already committed, 0..100. */
+export const committedPct = (r: Resource) => Math.max(0, Math.min(100, 100 - freePct(r)));
+
+export type PoolStatus = "Unallocated" | "Partially Allocated" | "Fully Allocated";
+
+export function poolStatus(r: Resource): PoolStatus {
+  const free = freePct(r);
+  if (free >= 100) return "Unallocated";
+  if (free > 0) return "Partially Allocated";
+  return "Fully Allocated";
+}
+
+export const poolTone = (r: Resource): "green" | "amber" | "red" => {
+  const free = freePct(r);
+  return free >= 100 ? "green" : free > 0 ? "amber" : "red";
+};
+
 /** Grouping key. Falls back to the name when the code is missing or "na". */
 function personKey(r: Resource): string {
   const code = (r.employeeCode || "").trim().toLowerCase();
