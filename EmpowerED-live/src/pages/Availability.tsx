@@ -15,19 +15,22 @@ export default function Availability() {
     const both = dedupeByPerson(rows.filter(isAvailable));
     const bench = dedupeByPerson(rows.filter(isBench));
     const buffer = dedupeByPerson(rows.filter(isBuffer));
-    // Bench is a SUBSET of Buffer (see Dashboard), so this is a de-dup count,
-    // never an addition. Stating it on the card stops it reading as 11 + 61.
-    const benchInPool = both.filter(isBench).length;
-
     // count = allocation RECORDS, so the cards tie back to the Dashboard.
     // list  = unique people, so no name appears twice in the table.
+    const benchCount = rows.filter(isBench).length;
+    const bufferCount = rows.filter(isBuffer).length;
+
     return [
+      // Headline is the straight sum of the two cards beside it, as specified.
+      // `records` stays the true row count, so the reconciliation line below
+      // does not mistake the sum for duplicates.
       { key: "all", label: "Available (Bench + Buffer)", list: both, accent: "#0F6CBD",
-        count: rows.filter(isAvailable).length, note: `${benchInPool} of these are on bench` },
+        count: benchCount + bufferCount, records: rows.filter(isAvailable).length,
+        note: `${benchCount} bench + ${bufferCount} buffer` },
       { key: "bench", label: "On Bench", list: bench, accent: "#E5484D",
-        count: rows.filter(isBench).length, note: "included in Available" },
+        count: benchCount, records: benchCount, note: "included in Available" },
       { key: "buffer", label: "On Buffer", list: buffer, accent: "#F5A524",
-        count: rows.filter(isBuffer).length, note: "included in Available" },
+        count: bufferCount, records: bufferCount, note: "included in Available" },
     ];
   }, [rows]);
 
@@ -35,7 +38,7 @@ export default function Availability() {
   const sel = groups[i];
   const fte = totalFreeFte(sel.list);
   const partTimers = sel.list.filter(isPartTime).length;
-  const merged = sel.count - sel.list.length;
+  const merged = sel.records - sel.list.length;
 
   return (
     <div>
@@ -69,7 +72,7 @@ export default function Availability() {
         )}
         {merged > 0 && (
           <span className="text-slate-400">
-            {" "}· {sel.count} records → {sel.list.length} people ({merged} duplicate{merged > 1 ? "s" : ""} merged)
+            {" "}· {sel.records} records → {sel.list.length} people ({merged} duplicate{merged > 1 ? "s" : ""} merged)
           </span>
         )}
       </div>
