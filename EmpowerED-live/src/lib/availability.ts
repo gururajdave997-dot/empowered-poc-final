@@ -1,162 +1,144 @@
-// EmpowerED-live/src/pages/Availability.tsx
+// EmpowerED-live/src/lib/availability.ts
 //
-// Self-contained: this page renders its own table instead of ResourceTable,
-// so the Alloc % column is dropped HERE ONLY. ResourceTable.tsx is untouched
-// and Resource Management keeps its Alloc % column exactly as it is.
+// Display helpers for capacity / allocation / availability.
+//
+// DEFINITIONS ARE TAKEN FROM THE DASHBOARD, which is the page the business
+// trusts. Do not "improve" them here without changing the Dashboard too:
+//
+//   Billable (324) + Buffer (61) = every record (385)
+//   Bench (11) is a SUBSET of Buffer, not a third group.
+//   Buffer FTE (55.25) = sum of the `capacity` field over buffer records.
+//
+// So Bench and Buffer deliberately OVERLAP. The Availability cards must read
+// as "61 available, of which 11 are on bench" — never as 11 + 61 = 72.
 
-import { useMemo, useState } from "react";
-import PageHeader from "@/components/PageHeader";
-import { Card, CardContent } from "@/components/ui/card";
-import { Table, THead, TH, TR, TD } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { downloadCSV } from "@/lib/utils";
-import { useResources } from "@/data/dataService";
-import {
-  isBench, isBuffer, isAvailable, isPartTime, totalFreeFte, dedupeByPerson,
-  capacityFte, capacityLabel, freePct, freeLabel, poolStatus, poolTone,
-} from "@/lib/availability";
-import { Download } from "lucide-react";
+import type { Resource } from "@/lib/types";
 
-function statusTone(s: string): "green" | "amber" | "red" | "default" {
-  if (s === "Available Now") return "green";
-  if (s === "Allocated") return "red";
-  return "amber";
+const said = (v?: string) => (v || "").toLowerCase();
+
+/**
+ * Allocation as a percentage 0..100.
+ *
+ * types.ts declares allocationPct as "0..100" but the Time Sheet feed sends
+ * FTE fractions (0.5 = half allocated). Rendering that raw gave "0.5%", which
+ * rounded to 0% — the original bug. Anything <= 1 is treated as FTE; a literal
+ * 1% allocation is not a real state, whereas 1.0 FTE is the commonest one.
+ */
+export function allocPct(r: Resource): number {
+  const raw = Number(r.allocationPct);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return raw <= 1 ? raw * 100 : raw;
 }
 
-export default function Availability() {
-  const rows = useResources();
+/** Capacity in FTE. 1.0 when the field is absent. */
+export function capacityFte(r: Resource): number {
+  const cap = Number(r.capacity);
+  if (!Number.isFinite(cap) || cap <= 0) return 1;
+  return cap > 1.5 ? cap / 100 : cap; // tolerate a feed that sends 50 for 0.5
+}
 
-  const groups = useMemo(() => {
-    // One line per person — the feed has one row per allocation, so without
-    // this a person with two allocation records is listed twice.
-    const both = dedupeByPerson(rows.filter(isAvailable));
-    const bench = dedupeByPerson(rows.filter(isBench));
-    const buffer = dedupeByPerson(rows.filter(isBuffer));
+export const capacityPct = (r: Resource) => capacityFte(r) * 100;
 
-    const benchCount = rows.filter(isBench).length;
-    const bufferCount = rows.filter(isBuffer).length;
+/** Unused capacity as a percentage of this person's own capacity. */
+export const freePct = (r: Resource) =>
+  Math.max(0, Math.min(100, capacityPct(r) - allocPct(r)));
 
-    return [
-      // Headline is the straight sum of the two cards beside it.
-      // `records` keeps the true row count so the line underneath does not
-      // mistake that sum for duplicates.
-      { key: "all", label: "Available (Bench + Buffer)", list: both, accent: "#0F6CBD",
-        count: benchCount + bufferCount, records: rows.filter(isAvailable).length,
-        note: `${benchCount} bench + ${bufferCount} buffer` },
-      { key: "bench", label: "On Bench", list: bench, accent: "#E5484D",
-        count: benchCount, records: benchCount, note: "included in Available" },
-      { key: "buffer", label: "On Buffer", list: buffer, accent: "#F5A524",
-        count: bufferCount, records: bufferCount, note: "included in Available" },
-    ];
-  }, [rows]);
+export const freeFte = (r: Resource) => (capacityPct(r) - allocPct(r)) / 100;
 
-  const [i, setI] = useState(0);
-  const [q, setQ] = useState("");
-  const sel = groups[i];
+export const allocLabel = (r: Resource) => `${Math.round(allocPct(r))}%`;
+export const freeLabel = (r: Resource) => `${Math.round(freePct(r))}%`;
+/** "1.0" / "0.5" — the half-timers that were previously invisible. */
+export const capacityLabel = (r: Resource) => capacityFte(r).toFixed(1);
+export const isPartTime = (r: Resource) => capacityFte(r) < 1;
 
-  const filtered = sel.list.filter((r) =>
-    !q || [r.name, r.employeeCode, r.businessUnit, r.department, r.primarySkill, r.secondarySkill]
-      .join(" ").toLowerCase().includes(q.toLowerCase())
-  );
+// --- Pool membership: same tests the Dashboard uses. Bench ⊂ Buffer. -------
 
-  const fte = totalFreeFte(filtered);
-  const partTimers = filtered.filter(isPartTime).length;
-  const merged = sel.records - sel.list.length;
+export const isBench = (r: Resource) =>
+  said(r.billableBuffer).includes("bench") ||
+  said(r.currentProject) === "bench" ||
+  said(r.department).includes("resource pool");
 
-  const exportRows = filtered.map((r) => ({
-    EmployeeCode: r.employeeCode, Name: r.name, BusinessUnit: r.businessUnit, Department: r.department,
-    PrimarySkill: r.primarySkill, SecondarySkill: r.secondarySkill, Experience: r.experience,
-    CurrentProject: r.currentProject,
-    CapacityFte: capacityFte(r),
-    FreePct: Math.round(freePct(r)),
-    AllocationStatus: poolStatus(r),
-    Availability: r.availabilityStatus,
-  }));
+export const isBuffer = (r: Resource) => said(r.billableBuffer).includes("buffer");
 
-  return (
-    <div>
-      <PageHeader
-        title="Availability"
-        subtitle="People who are on Bench or Buffer — names and details. Click a card to switch the list."
-      />
+/** Everyone in the available pool — bench and buffer, de-duplicated. */
+export const isAvailable = (r: Resource) => isBench(r) || isBuffer(r);
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-        {groups.map((g, idx) => (
-          <Card
-            key={g.key}
-            className={"relative overflow-hidden cursor-pointer hover:shadow-md " + (i === idx ? "ring-2 ring-brand" : "")}
-            onClick={() => setI(idx)}
-          >
-            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 5, background: g.accent }} />
-            <CardContent className="pt-4">
-              <div className="text-xs text-slate-500">{g.label}</div>
-              <div className="text-2xl font-bold text-brand-dark">{g.count}</div>
-              <div className="text-[11px] text-slate-400">{g.note}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+/** Spare capacity of a list, in FTE. Matches the Dashboard's Buffer FTE. */
+export const totalFreeFte = (rows: Resource[]) =>
+  rows.reduce((s, r) => s + Math.max(0, capacityFte(r)), 0);
 
-      <div className="text-xs text-slate-600 mb-2">
-        {filtered.length} people · capacity{" "}
-        <span className="font-semibold text-slate-800">{fte.toFixed(2)} FTE</span>
-        {partTimers > 0 && <span className="text-slate-400"> · {partTimers} part-time (under 1.0 FTE)</span>}
-        {merged > 0 && (
-          <span className="text-slate-400">
-            {" "}· {sel.records} records → {sel.list.length} people ({merged} duplicate{merged > 1 ? "s" : ""} merged)
-          </span>
-        )}
-      </div>
+// --- One line per person --------------------------------------------------
+//
+// The feed carries ONE ROW PER ALLOCATION, so a person with two allocation
+// records appears twice in any list (employee 2962 is the visible example) and
+// ResourceTable's key={employeeCode} collides. Merge them for display.
+//
+// Counts: FTE is preserved exactly (capacities are summed), so the total still
+// reconciles with the Dashboard. The HEADCOUNT legitimately drops, because it
+// was previously counting records rather than people.
 
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <div className="text-sm text-slate-600">
-          {sel.label} <span className="text-slate-400">({filtered.length})</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Input placeholder="Search name, BU, skill..." value={q} onChange={(e) => setQ(e.target.value)} className="w-56" />
-          <Button variant="outline" size="sm" onClick={() => downloadCSV("availability.csv", exportRows)}>
-            <Download size={14} /> Export
-          </Button>
-        </div>
-      </div>
+// --- Status derived from capacity, not from the row's own alloc field ------
+//
+// A buffer record with capacity 0.5 and allocationPct 0 means HALF of this
+// person is already committed elsewhere. Reading only allocationPct made the
+// badge say "Unallocated" when the person is really half booked.
 
-      <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
-        <Table>
-          {/* No Alloc % column here — on this page every row is 0% by
-              definition, because the allocation sits on a separate billable
-              record. Resource Management still shows it. */}
-          <THead><TR>
-            <TH>Name</TH><TH>Business Unit</TH><TH>Dept</TH>
-            <TH>Primary Skill</TH><TH>Secondary</TH><TH>Exp</TH><TH>Project</TH>
-            <TH>Capacity (FTE)</TH><TH>Free %</TH><TH>Allocation Status</TH><TH>Availability</TH>
-          </TR></THead>
-          <tbody>
-            {filtered.map((r) => (
-              <TR key={r.employeeCode || r.name}>
-                <TD className="font-medium text-slate-800">
-                  {r.name}<div className="text-xs text-slate-400">{r.employeeCode}</div>
-                </TD>
-                <TD>{r.businessUnit}</TD><TD>{r.department}</TD>
-                <TD>{r.primarySkill}</TD><TD className="text-slate-500">{r.secondarySkill}</TD>
-                <TD>{r.experience}y</TD><TD>{r.currentProject}</TD>
-                <TD className={isPartTime(r) ? "font-semibold text-violet-700" : "text-slate-500"}>
-                  {capacityLabel(r)}
-                </TD>
-                <TD className={freePct(r) > 0 ? "font-medium text-emerald-700" : "text-slate-400"}>
-                  {freeLabel(r)}
-                </TD>
-                <TD><Badge tone={poolTone(r)}>{poolStatus(r)}</Badge></TD>
-                <TD><Badge tone={statusTone(r.availabilityStatus)}>{r.availabilityStatus}</Badge></TD>
-              </TR>
-            ))}
-            {!filtered.length && (
-              <TR><TD colSpan={11} className="text-center text-slate-400 py-6">No matching resources.</TD></TR>
-            )}
-          </tbody>
-        </Table>
-      </div>
-    </div>
-  );
+/** How much of a FULL FTE is already committed, 0..100. */
+export const committedPct = (r: Resource) => Math.max(0, Math.min(100, 100 - freePct(r)));
+
+export type PoolStatus = "Unallocated" | "Partially Allocated" | "Fully Allocated";
+
+export function poolStatus(r: Resource): PoolStatus {
+  const free = freePct(r);
+  if (free >= 100) return "Unallocated";
+  if (free > 0) return "Partially Allocated";
+  return "Fully Allocated";
+}
+
+export const poolTone = (r: Resource): "green" | "amber" | "red" => {
+  const free = freePct(r);
+  return free >= 100 ? "green" : free > 0 ? "amber" : "red";
+};
+
+/** Grouping key. Falls back to the name when the code is missing or "na". */
+function personKey(r: Resource): string {
+  const code = (r.employeeCode || "").trim().toLowerCase();
+  return !code || code === "na" ? `name:${said(r.name)}` : code;
+}
+
+const filledCount = (r: Resource) =>
+  Object.values(r).filter((v) => v !== "" && v != null && v !== "Unspecified").length;
+
+/** Collapse allocation rows into one row per person, preserving total FTE. */
+export function dedupeByPerson(rows: Resource[]): Resource[] {
+  const groups = new Map<string, Resource[]>();
+  for (const r of rows) {
+    const k = personKey(r);
+    const g = groups.get(k);
+    if (g) g.push(r);
+    else groups.set(k, [r]);
+  }
+
+  const out: Resource[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) { out.push(group[0]); continue; }
+
+    // Richest row wins, so merged rows don't inherit "Unspecified" fields.
+    const base = group.reduce((a, b) => (filledCount(b) > filledCount(a) ? b : a), group[0]);
+    const capacity = group.reduce((s, r) => s + capacityFte(r), 0);
+    const allocated = group.reduce((s, r) => s + allocPct(r), 0);
+    const projects = Array.from(new Set(group.map((r) => r.currentProject).filter(Boolean)));
+
+    out.push({
+      ...base,
+      capacity,
+      allocationPct: allocated,          // already a percentage
+      currentProject: projects.join(", ") || base.currentProject,
+      experience: Math.max(...group.map((r) => Number(r.experience) || 0)),
+      timesheetHours: group.reduce((s, r) => s + (Number(r.timesheetHours) || 0), 0),
+      secondarySkill: base.secondarySkill ||
+        (group.map((r) => r.secondarySkill).find(Boolean) ?? ""),
+    });
+  }
+  return out;
 }
