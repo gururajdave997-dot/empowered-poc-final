@@ -1,3 +1,4 @@
+// EmpowerED-live/src/components/ResourceTable.tsx
 import { useState } from "react";
 import { Table, THead, TH, TR, TD } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -5,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { downloadCSV } from "@/lib/utils";
 import { allocStatus, ALLOC } from "@/lib/alloc";
+import { allocPct, allocLabel, freePct, freeLabel } from "@/lib/availability";
 import type { Resource } from "@/lib/types";
 import { Download } from "lucide-react";
 
@@ -13,6 +15,7 @@ function statusTone(s: string): "green" | "amber" | "red" | "default" {
   if (s === "Allocated") return "red";
   return "amber";
 }
+
 function allocTone(pct: number): "green" | "amber" | "red" {
   const s = allocStatus(pct);
   return s === ALLOC.UNALLOCATED ? "green" : s === ALLOC.PARTIAL ? "amber" : "red";
@@ -28,8 +31,12 @@ export default function ResourceTable({ rows, caption, onClear }: { rows: Resour
   const exportRows = filtered.map((r) => ({
     EmployeeCode: r.employeeCode, Name: r.name, BusinessUnit: r.businessUnit, Department: r.department,
     PrimarySkill: r.primarySkill, SecondarySkill: r.secondarySkill, Experience: r.experience,
-    CurrentProject: r.currentProject, AllocationPct: r.allocationPct,
-    AllocationStatus: allocStatus(r.allocationPct), Availability: r.availabilityStatus,
+    CurrentProject: r.currentProject,
+    // Normalised, so the CSV matches what the screen shows.
+    AllocationPct: Math.round(allocPct(r)),
+    FreePct: Math.round(freePct(r)),
+    AllocationStatus: allocStatus(allocPct(r)),
+    Availability: r.availabilityStatus,
   }));
 
   return (
@@ -47,7 +54,7 @@ export default function ResourceTable({ rows, caption, onClear }: { rows: Resour
           <THead><TR>
             <TH>Name</TH><TH>Business Unit</TH><TH>Dept</TH>
             <TH>Primary Skill</TH><TH>Secondary</TH><TH>Exp</TH><TH>Project</TH>
-            <TH>Alloc %</TH><TH>Allocation Status</TH><TH>Availability</TH>
+            <TH>Alloc %</TH><TH>Free %</TH><TH>Allocation Status</TH><TH>Availability</TH>
           </TR></THead>
           <tbody>
             {filtered.map((r) => (
@@ -56,12 +63,14 @@ export default function ResourceTable({ rows, caption, onClear }: { rows: Resour
                 <TD>{r.businessUnit}</TD><TD>{r.department}</TD>
                 <TD>{r.primarySkill}</TD><TD className="text-slate-500">{r.secondarySkill}</TD>
                 <TD>{r.experience}y</TD><TD>{r.currentProject}</TD>
-                <TD>{r.allocationPct}%</TD>
-                <TD><Badge tone={allocTone(r.allocationPct)}>{allocStatus(r.allocationPct)}</Badge></TD>
+                {/* was {r.allocationPct}% — an FTE of 0.5 rendered as "0.5%" */}
+                <TD>{allocLabel(r)}</TD>
+                <TD className={freePct(r) > 0 ? "font-medium text-emerald-700" : "text-slate-400"}>{freeLabel(r)}</TD>
+                <TD><Badge tone={allocTone(allocPct(r))}>{allocStatus(allocPct(r))}</Badge></TD>
                 <TD><Badge tone={statusTone(r.availabilityStatus)}>{r.availabilityStatus}</Badge></TD>
               </TR>
             ))}
-            {!filtered.length && <TR><TD colSpan={10} className="text-center text-slate-400 py-6">No matching resources.</TD></TR>}
+            {!filtered.length && <TR><TD colSpan={11} className="text-center text-slate-400 py-6">No matching resources.</TD></TR>}
           </tbody>
         </Table>
       </div>
