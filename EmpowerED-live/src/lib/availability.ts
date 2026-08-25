@@ -66,3 +66,56 @@ export const isAvailable = (r: Resource) => isBench(r) || isBuffer(r);
 /** Spare capacity of a list, in FTE. Matches the Dashboard's Buffer FTE. */
 export const totalFreeFte = (rows: Resource[]) =>
   rows.reduce((s, r) => s + Math.max(0, capacityFte(r)), 0);
+
+// --- One line per person --------------------------------------------------
+//
+// The feed carries ONE ROW PER ALLOCATION, so a person with two allocation
+// records appears twice in any list (employee 2962 is the visible example) and
+// ResourceTable's key={employeeCode} collides. Merge them for display.
+//
+// Counts: FTE is preserved exactly (capacities are summed), so the total still
+// reconciles with the Dashboard. The HEADCOUNT legitimately drops, because it
+// was previously counting records rather than people.
+
+/** Grouping key. Falls back to the name when the code is missing or "na". */
+function personKey(r: Resource): string {
+  const code = (r.employeeCode || "").trim().toLowerCase();
+  return !code || code === "na" ? `name:${said(r.name)}` : code;
+}
+
+const filledCount = (r: Resource) =>
+  Object.values(r).filter((v) => v !== "" && v != null && v !== "Unspecified").length;
+
+/** Collapse allocation rows into one row per person, preserving total FTE. */
+export function dedupeByPerson(rows: Resource[]): Resource[] {
+  const groups = new Map<string, Resource[]>();
+  for (const r of rows) {
+    const k = personKey(r);
+    const g = groups.get(k);
+    if (g) g.push(r);
+    else groups.set(k, [r]);
+  }
+
+  const out: Resource[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) { out.push(group[0]); continue; }
+
+    // Richest row wins, so merged rows don't inherit "Unspecified" fields.
+    const base = group.reduce((a, b) => (filledCount(b) > filledCount(a) ? b : a), group[0]);
+    const capacity = group.reduce((s, r) => s + capacityFte(r), 0);
+    const allocated = group.reduce((s, r) => s + allocPct(r), 0);
+    const projects = Array.from(new Set(group.map((r) => r.currentProject).filter(Boolean)));
+
+    out.push({
+      ...base,
+      capacity,
+      allocationPct: allocated,          // already a percentage
+      currentProject: projects.join(", ") || base.currentProject,
+      experience: Math.max(...group.map((r) => Number(r.experience) || 0)),
+      timesheetHours: group.reduce((s, r) => s + (Number(r.timesheetHours) || 0), 0),
+      secondarySkill: base.secondarySkill ||
+        (group.map((r) => r.secondarySkill).find(Boolean) ?? ""),
+    });
+  }
+  return out;
+}
